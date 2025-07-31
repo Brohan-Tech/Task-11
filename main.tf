@@ -97,6 +97,17 @@ resource "aws_lb_listener" "rohana_strapi_listener" {
   }
 }
 
+resource "aws_lb_listener" "rohana_strapi_test_listener" {
+  load_balancer_arn = aws_lb.rohana_strapi_alb.arn
+  port              = 8080
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.rohana_strapi_tg_green.arn
+  }
+}
+
 resource "aws_security_group" "rohana_strapi_sg" {
   name        = "rohana-strapi-sg"
   description = "Allow HTTP"
@@ -146,6 +157,14 @@ resource "aws_security_group" "rohana_alb_sg" {
     description = "Allow HTTPS traffic from the internet"
   }
 
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow test listener port"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -184,6 +203,10 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
     deployment_ready_option {
       action_on_timeout = "CONTINUE_DEPLOYMENT"
     }
+
+    green_fleet_provisioning_option {
+      action = "DISCOVER_EXISTING"
+    }
   }
 
   ecs_service {
@@ -196,9 +219,15 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
       prod_traffic_route {
         listener_arns = [aws_lb_listener.rohana_strapi_listener.arn]
       }
+
+      test_traffic_route {
+        listener_arns = [aws_lb_listener.rohana_strapi_test_listener.arn]
+      }
+
       target_group {
         name = aws_lb_target_group.rohana_strapi_tg_blue.name
       }
+
       target_group {
         name = aws_lb_target_group.rohana_strapi_tg_green.name
       }
@@ -229,7 +258,10 @@ resource "aws_ecs_service" "rohana_strapi_service" {
     container_port   = 1337
   }
 
-  depends_on = [aws_lb_listener.rohana_strapi_listener]
+  depends_on = [
+  aws_lb_listener.rohana_strapi_listener,
+  aws_codedeploy_deployment_group.rohana_strapi_dg
+]
 }
 
 resource "aws_cloudwatch_metric_alarm" "cpu_utilization_alarm" {
