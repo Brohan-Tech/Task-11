@@ -35,6 +35,7 @@ jobs:
 
       - name: Trigger CodeDeploy Deployment
         if: ${{ github.event.inputs.action == 'apply' }}
+        shell: bash
         run: |
           TASK_DEF_ARN=$(aws ecs list-task-definitions \
             --family-prefix rohana-strapi-task \
@@ -45,30 +46,30 @@ jobs:
 
           echo "Using TASK_DEF_ARN: $TASK_DEF_ARN"
 
-          cat <<EOF > appspec.json
-{
-  "version": 1,
-  "Resources": [
-    {
-      "TargetService": {
-        "Type": "AWS::ECS::Service",
-        "Properties": {
-          "TaskDefinition": "$TASK_DEF_ARN",
-          "LoadBalancerInfo": {
-            "ContainerName": "${{ env.CONTAINER_NAME }}",
-            "ContainerPort": 1337
-          }
-        }
-      }
-    }
-  ]
-}
-EOF
+          echo '{
+            "version": 1,
+            "Resources": [
+              {
+                "TargetService": {
+                  "Type": "AWS::ECS::Service",
+                  "Properties": {
+                    "TaskDefinition": "'"$TASK_DEF_ARN"'",
+                    "LoadBalancerInfo": {
+                      "ContainerName": "'"${CONTAINER_NAME}"'",
+                      "ContainerPort": 1337
+                    }
+                  }
+                }
+              }
+            ]
+          }' > appspec.json
+
+          DEPLOYMENT_JSON=$(jq -Rs . < appspec.json)
 
           aws deploy create-deployment \
             --application-name "$CODEDEPLOY_APP_NAME" \
             --deployment-group-name "$CODEDEPLOY_GROUP_NAME" \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --revision "revisionType=AppSpecContent,appSpecContent={\"content\":\"$(jq -Rs . < appspec.json)\"}" \
+            --revision "revisionType=AppSpecContent,appSpecContent={\"content\":$DEPLOYMENT_JSON}" \
             --description "Blue/Green deployment triggered by GitHub Actions"
 
