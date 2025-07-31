@@ -89,26 +89,11 @@ jobs:
             --max-items 1 \
             --query 'taskDefinitionArns[0]' \
             --output text)
+
           echo "Using TASK_DEF_ARN: $TASK_DEF_ARN"
 
-          CONTENT=$(jq -n --arg taskDef "$TASK_DEF_ARN" --arg container "rohana-strapi" --argjson port 1337 '
-          {
-            version: 1,
-            Resources: [
-              {
-                TargetService: {
-                  Type: "AWS::ECS::Service",
-                  Properties: {
-                    TaskDefinition: $taskDef,
-                    LoadBalancerInfo: {
-                      ContainerName: $container,
-                      ContainerPort: $port
-                    }
-                  }
-                }
-              }
-            ]
-          }')
+          CONTENT=$(jq -nc --arg taskDef "$TASK_DEF_ARN" --arg container "rohana-strapi" --argjson port 1337 '
+            { version: 1, Resources: [ { TargetService: { Type: "AWS::ECS::Service", Properties: { TaskDefinition: $taskDef, LoadBalancerInfo: { ContainerName: $container, ContainerPort: $port } } } } ] }')
 
           aws deploy create-deployment \
             --application-name "$CODEDEPLOY_APP_NAME" \
