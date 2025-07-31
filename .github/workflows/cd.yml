@@ -89,35 +89,32 @@ jobs:
             --max-items 1 \
             --query 'taskDefinitionArns[0]' \
             --output text)
-
           echo "Using TASK_DEF_ARN: $TASK_DEF_ARN"
 
-          APP_SPEC=$(cat <<EOF
-{
-  "version": 1,
-  "Resources": [
-    {
-      "TargetService": {
-        "Type": "AWS::ECS::Service",
-        "Properties": {
-          "TaskDefinition": "$TASK_DEF_ARN",
-          "LoadBalancerInfo": {
-            "ContainerName": "rohana-strapi",
-            "ContainerPort": 1337
-          }
-        }
-      }
-    }
-  ]
-}
-EOF
-)
+          CONTENT=$(jq -n --arg taskDef "$TASK_DEF_ARN" --arg container "rohana-strapi" --argjson port 1337 '
+          {
+            version: 1,
+            Resources: [
+              {
+                TargetService: {
+                  Type: "AWS::ECS::Service",
+                  Properties: {
+                    TaskDefinition: $taskDef,
+                    LoadBalancerInfo: {
+                      ContainerName: $container,
+                      ContainerPort: $port
+                    }
+                  }
+                }
+              }
+            ]
+          }')
 
           aws deploy create-deployment \
             --application-name "$CODEDEPLOY_APP_NAME" \
             --deployment-group-name "$CODEDEPLOY_GROUP_NAME" \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --revision "revisionType=AppSpecContent,appSpecContent={\"content\":$(echo \"$APP_SPEC\" | jq -Rs .)}"
+            --revision revisionType=AppSpecContent,appSpecContent="{\"content\":$CONTENT}"
 
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
