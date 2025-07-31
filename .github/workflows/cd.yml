@@ -19,6 +19,10 @@ env:
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: rohana-strapi-repo
+  ECS_CLUSTER_NAME: rohana-strapi-cluster
+  ECS_SERVICE_NAME: rohana-strapi-service
+  CODEDEPLOY_APP_NAME: rohana-strapi
+  CODEDEPLOY_GROUP_NAME: rohana-strapi-dg
 
 jobs:
   deploy:
@@ -76,6 +80,15 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         run: terraform apply -auto-approve
 
+      - name: Trigger CodeDeploy Deployment
+        if: ${{ github.event.inputs.action == 'apply' }}
+        run: |
+          aws deploy create-deployment \
+            --application-name ${{ env.CODEDEPLOY_APP_NAME }} \
+            --deployment-group-name ${{ env.CODEDEPLOY_GROUP_NAME }} \
+            --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
+            --revision fileExistsBehavior=DISALLOW,revisionType=AppSpecContent,appSpecContent="{\"content\":\"version: 1\\nResources:\\n  - TargetService:\\n      Type: AWS::ECS::Service\\n      Properties:\\n        TaskDefinition: ${IMAGE_URI}\\n        LoadBalancerInfo:\\n          ContainerName: rohana-strapi\\n          ContainerPort: 1337\"}"
+          
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
         run: terraform destroy -auto-approve
