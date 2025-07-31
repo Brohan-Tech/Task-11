@@ -84,25 +84,23 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         id: get_taskdef
         run: |
-          TASK_DEF_ARN=$(aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services $ECS_SERVICE_NAME --query "services[0].taskDefinition" --output text)
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster $ECS_CLUSTER_NAME \
+            --services $ECS_SERVICE_NAME \
+            --query "services[0].taskDefinition" \
+            --output text)
           echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+          echo "TASK_DEF_ARN=$TASK_DEF_ARN" # just for logging
 
       - name: Trigger CodeDeploy Deployment
         if: ${{ github.event.inputs.action == 'apply' }}
         run: |
-          echo "Using Task Definition ARN: $TASK_DEF_ARN"
-          aws deploy create-deployment --cli-input-json '{
-            "applicationName": "'"$CODEDEPLOY_APP_NAME"'",
-            "deploymentGroupName": "'"$CODEDEPLOY_GROUP_NAME"'",
-            "deploymentConfigName": "CodeDeployDefault.ECSCanary10Percent5Minutes",
-            "revision": {
-              "revisionType": "AppSpecContent",
-              "appSpecContent": {
-                "content": "version: 1\nResources:\n  - TargetService:\n      Type: AWS::ECS::Service\n      Properties:\n        TaskDefinition: '"$TASK_DEF_ARN"'\n        LoadBalancerInfo:\n          ContainerName: rohana-strapi\n          ContainerPort: 1337"
-              }
-            }
-          }'
-
+          echo "Triggering CodeDeploy deployment with TaskDefinition: $TASK_DEF_ARN"
+          aws deploy create-deployment \
+            --application-name $CODEDEPLOY_APP_NAME \
+            --deployment-group-name $CODEDEPLOY_GROUP_NAME \
+            --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
+            --revision revisionType=AppSpecContent,appSpecContent="{\"content\":\"version: 1\\nResources:\\n  - TargetService:\\n      Type: AWS::ECS::Service\\n      Properties:\\n        TaskDefinition: $TASK_DEF_ARN\\n        LoadBalancerInfo:\\n          ContainerName: rohana-strapi\\n          ContainerPort: 1337\"}"
 
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
