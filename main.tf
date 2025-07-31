@@ -184,10 +184,6 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
     deployment_ready_option {
       action_on_timeout = "CONTINUE_DEPLOYMENT"
     }
-
-    green_fleet_provisioning_option {
-      action = "DISCOVER_EXISTING"
-    }
   }
 
   ecs_service {
