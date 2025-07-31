@@ -20,34 +20,30 @@ resource "aws_ecs_task_definition" "rohana_strapi_task" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
-  container_definitions = jsonencode([
-    {
-      name      = "rohana-strapi"
-      image     = "607700977843.dkr.ecr.us-east-2.amazonaws.com/rohana-strapi-repo:latest"
-      essential = true
-      portMappings = [
-        {
-          containerPort = 1337
-          hostPort      = 1337
-          protocol      = "tcp"
-        }
-      ]
-      environment = [
-        { name = "APP_KEYS",          value = var.app_keys },
-        { name = "ADMIN_JWT_SECRET", value = var.admin_jwt_secret },
-        { name = "JWT_SECRET",        value = var.jwt_secret },
-        { name = "API_TOKEN_SALT",    value = var.api_token_salt }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.rohana_strapi_log_group.name
-          awslogs-region        = "us-east-2"
-          awslogs-stream-prefix = "ecs/rohana-strapi"
-        }
+  container_definitions = jsonencode([{
+    name      = "rohana-strapi"
+    image     = "607700977843.dkr.ecr.us-east-2.amazonaws.com/rohana-strapi-repo:latest"
+    essential = true
+    portMappings = [{
+      containerPort = 1337
+      hostPort      = 1337
+      protocol      = "tcp"
+    }]
+    environment = [
+      { name = "APP_KEYS",          value = var.app_keys },
+      { name = "ADMIN_JWT_SECRET", value = var.admin_jwt_secret },
+      { name = "JWT_SECRET",        value = var.jwt_secret },
+      { name = "API_TOKEN_SALT",    value = var.api_token_salt }
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.rohana_strapi_log_group.name
+        awslogs-region        = "us-east-2"
+        awslogs-stream-prefix = "ecs/rohana-strapi"
       }
     }
-  ])
+  }])
 }
 
 resource "aws_lb" "rohana_strapi_alb" {
@@ -159,8 +155,8 @@ resource "aws_security_group" "rohana_alb_sg" {
 }
 
 resource "aws_codedeploy_app" "rohana_strapi" {
-  name = "rohana-strapi"
-  compute_platform = "ECS"
+  name              = "rohana-strapi"
+  compute_platform  = "ECS"
 }
 
 resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
@@ -168,6 +164,11 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
   deployment_group_name  = "rohana-strapi-dg"
   service_role_arn       = var.codedeploy_role_arn
   deployment_config_name = "CodeDeployDefault.ECSCanary10Percent5Minutes"
+
+  deployment_style {
+    deployment_type   = "BLUE_GREEN"
+    deployment_option = "WITH_TRAFFIC_CONTROL"
+  }
 
   auto_rollback_configuration {
     enabled = true
@@ -179,6 +180,7 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
       action                            = "TERMINATE"
       termination_wait_time_in_minutes  = 5
     }
+
     deployment_ready_option {
       action_on_timeout = "CONTINUE_DEPLOYMENT"
     }
@@ -211,6 +213,10 @@ resource "aws_ecs_service" "rohana_strapi_service" {
   desired_count   = 1
 
   launch_type = "FARGATE"
+
+  deployment_controller {
+    type = "CODE_DEPLOY"
+  }
 
   network_configuration {
     subnets         = ["subnet-0a1e6640cafebb652", "subnet-0f768008c6324831f"]
