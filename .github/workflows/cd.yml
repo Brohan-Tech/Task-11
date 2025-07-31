@@ -83,21 +83,11 @@ jobs:
       - name: Trigger CodeDeploy Deployment
         if: ${{ github.event.inputs.action == 'apply' }}
         run: |
-          JSON=$(cat <<EOF
-{
-  "revisionType": "AppSpecContent",
-  "appSpecContent": {
-    "content": "version: 1\nResources:\n  - TargetService:\n      Type: AWS::ECS::Service\n      Properties:\n        TaskDefinition: ${IMAGE_URI}\n        LoadBalancerInfo:\n          ContainerName: rohana-strapi\n          ContainerPort: 1337"
-  },
-  "fileExistsBehavior": "DISALLOW"
-}
-EOF
-)
           aws deploy create-deployment \
             --application-name ${{ env.CODEDEPLOY_APP_NAME }} \
             --deployment-group-name ${{ env.CODEDEPLOY_GROUP_NAME }} \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --revision "$JSON"
+            --revision revisionType=AppSpecContent,appSpecContent="{\"content\":\"version: 1\\nResources:\\n  - TargetService:\\n      Type: AWS::ECS::Service\\n      Properties:\\n        TaskDefinition: ${IMAGE_URI}\\n        LoadBalancerInfo:\\n          ContainerName: rohana-strapi\\n          ContainerPort: 1337\"}",fileExistsBehavior=DISALLOW
 
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
