@@ -155,8 +155,8 @@ resource "aws_security_group" "rohana_alb_sg" {
 }
 
 resource "aws_codedeploy_app" "rohana_strapi" {
-  name              = "rohana-strapi"
-  compute_platform  = "ECS"
+  name             = "rohana-strapi"
+  compute_platform = "ECS"
 }
 
 resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
@@ -164,11 +164,6 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
   deployment_group_name  = "rohana-strapi-dg"
   service_role_arn       = var.codedeploy_role_arn
   deployment_config_name = "CodeDeployDefault.ECSCanary10Percent5Minutes"
-
-  deployment_style {
-    deployment_type   = "BLUE_GREEN"
-    deployment_option = "WITH_TRAFFIC_CONTROL"
-  }
 
   auto_rollback_configuration {
     enabled = true
@@ -183,6 +178,10 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
 
     deployment_ready_option {
       action_on_timeout = "CONTINUE_DEPLOYMENT"
+    }
+
+    green_fleet_provisioning_option {
+      action = "DISCOVER_EXISTING"
     }
   }
 
@@ -211,8 +210,7 @@ resource "aws_ecs_service" "rohana_strapi_service" {
   cluster         = aws_ecs_cluster.rohana_strapi_cluster.id
   task_definition = aws_ecs_task_definition.rohana_strapi_task.arn
   desired_count   = 1
-
-  launch_type = "FARGATE"
+  launch_type     = "FARGATE"
 
   deployment_controller {
     type = "CODE_DEPLOY"
@@ -228,6 +226,10 @@ resource "aws_ecs_service" "rohana_strapi_service" {
     target_group_arn = aws_lb_target_group.rohana_strapi_tg_blue.arn
     container_name   = "rohana-strapi"
     container_port   = 1337
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition]
   }
 
   depends_on = [aws_lb_listener.rohana_strapi_listener]
@@ -290,4 +292,3 @@ resource "aws_cloudwatch_dashboard" "strapi_dashboard" {
     ]
   })
 }
-
