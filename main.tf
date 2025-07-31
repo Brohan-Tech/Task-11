@@ -258,10 +258,7 @@ resource "aws_ecs_service" "rohana_strapi_service" {
     container_port   = 1337
   }
 
-  depends_on = [
-  aws_lb_listener.rohana_strapi_listener,
-  aws_codedeploy_deployment_group.rohana_strapi_dg
-]
+  depends_on = [aws_lb_listener.rohana_strapi_listener]
 }
 
 resource "aws_cloudwatch_metric_alarm" "cpu_utilization_alarm" {
