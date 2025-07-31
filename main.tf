@@ -165,6 +165,11 @@ resource "aws_codedeploy_deployment_group" "rohana_strapi_dg" {
   service_role_arn       = var.codedeploy_role_arn
   deployment_config_name = "CodeDeployDefault.ECSCanary10Percent5Minutes"
 
+  deployment_style {
+    deployment_type   = "BLUE_GREEN"
+    deployment_option = "WITH_TRAFFIC_CONTROL"
+  }
+
   auto_rollback_configuration {
     enabled = true
     events  = ["DEPLOYMENT_FAILURE"]
@@ -292,3 +297,4 @@ resource "aws_cloudwatch_dashboard" "strapi_dashboard" {
     ]
   })
 }
+
