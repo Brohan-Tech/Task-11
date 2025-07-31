@@ -1,84 +1,37 @@
-name: CD - Terraform Deployment
+name: Deploy Strapi on ECS (Blue/Green)
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Terraform action (apply/destroy)'
+        description: 'Action to perform'
         required: true
         default: 'apply'
-        type: choice
-        options:
-          - apply
-          - destroy
-      image_tag:
-        description: 'Git SHA image tag (optional)'
-        required: false
 
 env:
   AWS_REGION: us-east-2
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: rohana-strapi-repo
   ECS_CLUSTER_NAME: rohana-strapi-cluster
   ECS_SERVICE_NAME: rohana-strapi-service
-  CODEDEPLOY_APP_NAME: rohana-strapi
-  CODEDEPLOY_GROUP_NAME: rohana-strapi-dg
+  CONTAINER_NAME: rohana-strapi
+  CODEDEPLOY_APP_NAME: rohana-strapi-codedeploy-app
+  CODEDEPLOY_GROUP_NAME: rohana-strapi-deployment-group
 
 jobs:
   deploy:
+    name: Deploy Strapi to ECS using CodeDeploy
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Determine Image URI
-        if: ${{ github.event.inputs.action == 'apply' }}
-        run: |
-          IMAGE_TAG="${{ github.event.inputs.image_tag || 'latest' }}"
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-          echo "IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_ENV
-
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Generate image.auto.tfvars
-        if: ${{ github.event.inputs.action == 'apply' }}
-        env:
-          EXECUTION_ROLE_ARN: ${{ secrets.EXECUTION_ROLE_ARN }}
-          TASK_ROLE_ARN: ${{ secrets.TASK_ROLE_ARN }}
-          APP_KEYS: ${{ secrets.APP_KEYS }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
-          API_TOKEN_SALT: ${{ secrets.API_TOKEN_SALT }}
-          CODEDEPLOY_ROLE_ARN: ${{ secrets.CODEDEPLOY_ROLE_ARN }}
-        run: |
-          echo "container_image = \"$IMAGE_URI\"" > image.auto.tfvars
-          echo "execution_role_arn = \"${EXECUTION_ROLE_ARN//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "task_role_arn = \"${TASK_ROLE_ARN//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "codedeploy_role_arn = \"${CODEDEPLOY_ROLE_ARN//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "app_keys = \"${APP_KEYS//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "jwt_secret = \"${JWT_SECRET//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "admin_jwt_secret = \"${ADMIN_JWT_SECRET//[$'\t\r\n']}\"" >> image.auto.tfvars
-          echo "api_token_salt = \"${API_TOKEN_SALT//[$'\t\r\n']}\"" >> image.auto.tfvars
-
-      - name: Terraform Plan
-        if: ${{ github.event.inputs.action == 'apply' }}
-        run: terraform plan
-
-      - name: Terraform Apply
-        if: ${{ github.event.inputs.action == 'apply' }}
-        run: terraform apply -auto-approve
 
       - name: Trigger CodeDeploy Deployment
         if: ${{ github.event.inputs.action == 'apply' }}
@@ -92,24 +45,30 @@ jobs:
 
           echo "Using TASK_DEF_ARN: $TASK_DEF_ARN"
 
-          CONTENT=$(jq -nc --arg taskDef "$TASK_DEF_ARN" --arg container "rohana-strapi" --argjson port 1337 '
-            { version: 1, Resources: [ { TargetService: { Type: "AWS::ECS::Service", Properties: { TaskDefinition: $taskDef, LoadBalancerInfo: { ContainerName: $container, ContainerPort: $port } } } } ] }')
+          cat <<EOF > appspec.json
+{
+  "version": 1,
+  "Resources": [
+    {
+      "TargetService": {
+        "Type": "AWS::ECS::Service",
+        "Properties": {
+          "TaskDefinition": "$TASK_DEF_ARN",
+          "LoadBalancerInfo": {
+            "ContainerName": "${{ env.CONTAINER_NAME }}",
+            "ContainerPort": 1337
+          }
+        }
+      }
+    }
+  ]
+}
+EOF
 
           aws deploy create-deployment \
             --application-name "$CODEDEPLOY_APP_NAME" \
             --deployment-group-name "$CODEDEPLOY_GROUP_NAME" \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --revision revisionType=AppSpecContent,appSpecContent="{\"content\":$CONTENT}"
-
-      - name: Terraform Destroy
-        if: ${{ github.event.inputs.action == 'destroy' }}
-        run: terraform destroy -auto-approve
-        env:
-          TF_VAR_admin_jwt_secret: ${{ secrets.ADMIN_JWT_SECRET }}
-          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
-          TF_VAR_app_keys: ${{ secrets.APP_KEYS }}
-          TF_VAR_api_token_salt: ${{ secrets.API_TOKEN_SALT }}
-          TF_VAR_container_image: "dummy"
-          TF_VAR_execution_role_arn: ${{ secrets.EXECUTION_ROLE_ARN }}
-          TF_VAR_task_role_arn: ${{ secrets.TASK_ROLE_ARN }}
+            --revision "revisionType=AppSpecContent,appSpecContent={\"content\":\"$(jq -Rs . < appspec.json)\"}" \
+            --description "Blue/Green deployment triggered by GitHub Actions"
 
