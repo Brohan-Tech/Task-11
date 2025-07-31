@@ -76,6 +76,25 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         run: terraform apply -auto-approve
 
+      - name: Trigger AWS CodeDeploy Deployment
+        if: ${{ github.event.inputs.action == 'apply' }}
+        run: |
+          echo "Triggering CodeDeploy deployment..."
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name rohana-strapi-codedeploy-app \
+            --deployment-group-name rohana-strapi-deployment-group \
+            --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
+            --description "Blue/Green deployment triggered from GitHub Actions" \
+            --file-exists-behavior OVERWRITE \
+            --github-location repository=${{ github.repository }},commitId=${{ github.sha }} \
+            --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
+            --output text --query "deploymentId")
+
+          echo "Deployment ID: $DEPLOYMENT_ID"
+          echo "Waiting for deployment to finish..."
+
+          aws deploy wait deployment-successful --deployment-id $DEPLOYMENT_ID
+
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
         run: terraform destroy -auto-approve
