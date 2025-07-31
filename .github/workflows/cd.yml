@@ -45,7 +45,7 @@ jobs:
       - name: Determine Image URI
         if: ${{ github.event.inputs.action == 'apply' }}
         run: |
-          IMAGE_TAG="${{ github.event.inputs.image_tag || 'latest' }}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag || github.sha }}"
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_ENV
 
@@ -80,6 +80,18 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         run: terraform apply -auto-approve
 
+      - name: Generate appspec.json
+        if: ${{ github.event.inputs.action == 'apply' }}
+        run: |
+          cat <<EOF > appspec.json
+{
+  "revisionType": "AppSpecContent",
+  "appSpecContent": {
+    "content": "version: 1\nResources:\n  - TargetService:\n      Type: AWS::ECS::Service\n      Properties:\n        TaskDefinition: \"$IMAGE_URI\"\n        LoadBalancerInfo:\n          ContainerName: rohana-strapi\n          ContainerPort: 1337"
+  }
+}
+EOF
+
       - name: Trigger CodeDeploy Deployment
         if: ${{ github.event.inputs.action == 'apply' }}
         run: |
@@ -88,12 +100,7 @@ jobs:
             --application-name "$CODEDEPLOY_APP_NAME" \
             --deployment-group-name "$CODEDEPLOY_GROUP_NAME" \
             --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --revision '{
-              "revisionType": "AppSpecContent",
-              "appSpecContent": {
-                "content": "version: 1\nResources:\n  - TargetService:\n      Type: AWS::ECS::Service\n      Properties:\n        TaskDefinition: '$IMAGE_URI'\n        LoadBalancerInfo:\n          ContainerName: rohana-strapi\n          ContainerPort: 1337"
-              }
-            }'
+            --revision file://appspec.json
 
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
